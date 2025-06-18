@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:gemini_chat_flutter_app/message.dart';
+import 'package:google_generative_ai/google_generative_ai.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -12,16 +14,42 @@ class _MyHomePageState extends State<HomePage> {
   final TextEditingController _controller = TextEditingController();
   final List<Message> _messages = [
     Message(text: 'Hello, how can I help you?', isUser: false),
-    Message(text: 'I need assistance with my account.', isUser: true),
-    Message(text: 'Sure, I can help with that.', isUser: false),
-    Message(text: 'Thank you!', isUser: true),
   ];
 
-  bool _isDarkMode = false; // Add this line
+  bool _isDarkMode = false;
+  bool _isLoading = false; // Add this line
+
+  callGeminiModel() async {
+    try {
+      if (_controller.text.isNotEmpty) {
+        setState(() {
+          _messages.add(Message(text: _controller.text, isUser: true));
+          _isLoading = true; // Show loading indicator
+        });
+      }
+      final model = GenerativeModel(
+          model: 'gemini-2.5-flash', apiKey: dotenv.env['GOOGLE_API_KEY']!);
+      final prompt = _controller.text.trim();
+      final content = [Content.text(prompt)];
+      final response = await model.generateContent(content);
+
+      setState(() {
+        _messages
+            .add(Message(text: response.text ?? "No response", isUser: false));
+        _isLoading = false; // Hide loading indicator
+      });
+      _controller.clear();
+    } on Exception catch (e) {
+      setState(() {
+        _isLoading = false; // Hide loading indicator on error
+      });
+      print('Error calling Gemini model: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp( // Wrap with MaterialApp to control theme
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData.light(),
       darkTheme: ThemeData.dark(),
@@ -123,6 +151,11 @@ class _MyHomePageState extends State<HomePage> {
                   },
                 ),
               ),
+              if (_isLoading) // Show loading indicator when loading
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20.0),
+                  child: CircularProgressIndicator(),
+                ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8.0),
                 child: Row(
@@ -137,28 +170,17 @@ class _MyHomePageState extends State<HomePage> {
                           ),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                         ),
-                        onSubmitted: (text) {
-                          if (text.isNotEmpty) {
-                            setState(() {
-                              _messages.add(Message(text: text, isUser: true));
-                            });
-                            _controller.clear();
-                          }
-                        },
+                        enabled: !_isLoading, // Disable input while loading
                       ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.send),
                       color: Theme.of(context).colorScheme.primary,
-                      onPressed: () {
-                        final text = _controller.text.trim();
-                        if (text.isNotEmpty) {
-                          setState(() {
-                            _messages.add(Message(text: text, isUser: true));
-                          });
-                          _controller.clear();
-                        }
-                      },
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                              callGeminiModel();
+                            },
                     ),
                   ],
                 ),
